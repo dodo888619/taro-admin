@@ -6,7 +6,7 @@ export const metadata = { title: '编辑管理员' };
 
 export default async function EditAdminUserPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const user = /^\d+$/.test(id) ? getAdminUser(Number(id)) : null;
+  const user = /^\d+$/.test(id) ? await getAdminUser(Number(id)) : null;
   if (!user) {
     return (
       <div className="card">
@@ -32,7 +32,7 @@ export default async function EditAdminUserPage({ params }: { params: Promise<{ 
         username={user.username}
         roleIds={user.roleIds}
         enabled={user.enabled}
-        roles={listRoles().map((role) => ({ id: role.id, name: role.name }))}
+        roles={(await listRoles()).map((role) => ({ id: role.id, name: role.name }))}
       />
     </>
   );

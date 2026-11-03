@@ -10,7 +10,7 @@ export default async function ProductsPage() {
   const access = await requireAdmin();
   const canEdit = canAccess(access, actionPermission('product:list', 'update'));
   const canPublish = canAccess(access, actionPermission('product:new', 'create'));
-  const products = listProducts();
+  const products = await listProducts();
   return (
     <>
       <div className="page-head">

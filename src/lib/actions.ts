@@ -43,7 +43,7 @@ export async function loginAction(
 ): Promise<FormState> {
   const username = String(formData.get('username') ?? '');
   const password = String(formData.get('password') ?? '');
-  const result = verifyCredentials(username, password);
+  const result = await verifyCredentials(username, password);
   if (!result.ok) return { error: result.error };
   await createSession(username);
   redirect('/');
@@ -57,7 +57,7 @@ export async function registerAction(
   const confirm = String(formData.get('confirm') ?? '');
   if (password !== confirm) return { error: '两次输入的密码不一致' };
   try {
-    registerAdminUser(String(formData.get('username') ?? ''), password);
+    await registerAdminUser(String(formData.get('username') ?? ''), password);
   } catch (error) {
     return { error: publicError(error) };
   }
@@ -82,7 +82,7 @@ export async function saveProduct(
   const code = input.id ? actionPermission('product:list', 'update') : actionPermission('product:new', 'create');
   if (!canAccess(access, code)) return { ok: false, error: '没有权限' };
   try {
-    const id = saveProductRecord(input);
+    const id = await saveProductRecord(input);
     refreshMall();
     return { ok: true, id };
   } catch (error) {
@@ -103,7 +103,7 @@ export async function saveRowAction(
     input[key] = value;
   }
   try {
-    saveRow(table, pk, input);
+    await saveRow(table, pk, input);
     refreshMall();
   } catch (error) {
     return { error: publicError(error) };
@@ -116,7 +116,7 @@ export async function deleteRowAction(formData: FormData): Promise<void> {
   await guardMenu(actionPermission(`table:${table}`, 'delete'));
   const pk = String(formData.get('pk') ?? '');
   try {
-    removeRow(table, pk);
+    await removeRow(table, pk);
     refreshMall();
   } catch (error) {
     redirect(
@@ -134,7 +134,7 @@ export async function shipOrder(formData: FormData): Promise<void> {
   await guardMenu(actionPermission('table:orders', 'ship'));
   const back = String(formData.get('back') ?? '/tables/orders');
   try {
-    shipPendingOrder(Number(formData.get('id')));
+    await shipPendingOrder(Number(formData.get('id')));
     refreshMall();
   } catch (error) {
     redirect(withNotice(back, 'error', publicError(error)));
@@ -150,8 +150,8 @@ export async function saveRoleAction(_prev: FormState, formData: FormData): Prom
   const id = Number(formData.get('id') ?? 0);
   await guardMenu(actionPermission('access:roles', id ? 'update' : 'create'));
   try {
-    if (id) updateRole(id, String(formData.get('name') ?? ''), String(formData.get('remark') ?? ''));
-    else createRole(String(formData.get('name') ?? ''), String(formData.get('remark') ?? ''));
+    if (id) await updateRole(id, String(formData.get('name') ?? ''), String(formData.get('remark') ?? ''));
+    else await createRole(String(formData.get('name') ?? ''), String(formData.get('remark') ?? ''));
     refreshAccess();
   } catch (error) {
     return { error: publicError(error) };
@@ -162,7 +162,7 @@ export async function saveRoleAction(_prev: FormState, formData: FormData): Prom
 export async function deleteRoleAction(formData: FormData): Promise<void> {
   await guardMenu(actionPermission('access:roles', 'delete'));
   try {
-    deleteRole(Number(formData.get('id')));
+    await deleteRole(Number(formData.get('id')));
     refreshAccess();
   } catch (error) {
     redirect(withNotice('/access/roles', 'error', publicError(error)));
@@ -173,7 +173,7 @@ export async function deleteRoleAction(formData: FormData): Promise<void> {
 export async function saveRoleMenusAction(roleId: number, codes: string[]): Promise<FormState> {
   await guardMenu(actionPermission('access:roles', 'update'));
   try {
-    setRoleMenus(roleId, codes);
+    await setRoleMenus(roleId, codes);
     refreshAccess();
   } catch (error) {
     return { error: publicError(error) };
@@ -188,9 +188,9 @@ export async function saveAdminUserAction(_prev: FormState, formData: FormData):
   const enabled = String(formData.get('enabled') ?? '1') === '1';
   const password = String(formData.get('password') ?? '');
   try {
-    if (id) updateAdminUser({ id, password, roleIds, enabled });
+    if (id) await updateAdminUser({ id, password, roleIds, enabled });
     else {
-      createAdminUser({
+      await createAdminUser({
         username: String(formData.get('username') ?? ''),
         password,
         roleIds,
@@ -223,7 +223,7 @@ export async function saveAdminMenuAction(_prev: FormState, formData: FormData):
   const input = menuInput(formData);
   try {
     if (id) {
-      updateAdminMenu({
+      await updateAdminMenu({
         id,
         name: input.name,
         href: input.href,
@@ -231,7 +231,7 @@ export async function saveAdminMenuAction(_prev: FormState, formData: FormData):
         sort: input.sort,
         enabled: input.enabled,
       });
-    } else createAdminMenu(input);
+    } else await createAdminMenu(input);
     refreshAccess();
   } catch (error) {
     return { error: publicError(error) };
@@ -242,7 +242,7 @@ export async function saveAdminMenuAction(_prev: FormState, formData: FormData):
 export async function deleteAdminMenuAction(formData: FormData): Promise<void> {
   await guardMenu(actionPermission('access:menus', 'delete'));
   try {
-    deleteAdminMenu(Number(formData.get('id')));
+    await deleteAdminMenu(Number(formData.get('id')));
     refreshAccess();
   } catch (error) {
     redirect(withNotice('/access/menus', 'error', publicError(error)));
@@ -253,7 +253,7 @@ export async function deleteAdminMenuAction(formData: FormData): Promise<void> {
 export async function deleteAdminUserAction(formData: FormData): Promise<void> {
   await guardMenu(actionPermission('access:users', 'delete'));
   try {
-    deleteAdminUser(Number(formData.get('id')));
+    await deleteAdminUser(Number(formData.get('id')));
     refreshAccess();
   } catch (error) {
     redirect(withNotice('/access/users', 'error', publicError(error)));

@@ -28,7 +28,7 @@ export default async function EditProductPage({
     );
   }
   const access = await requireAdmin();
-  const product = getProduct(Number(id));
+  const product = await getProduct(Number(id));
   if (!product) {
     return (
       <div className="card">
@@ -50,7 +50,7 @@ export default async function EditProductPage({
       </div>
       <Flash saved={query.saved} error={query.error} />
       <ProductForm
-        categories={listCategories()}
+        categories={await listCategories()}
         initial={product}
         canSave={canAccess(access, actionPermission('product:list', 'update'))}
       />

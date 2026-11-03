@@ -16,7 +16,7 @@ export default async function RoleDetailPage({
 }) {
   const { id } = await params;
   const query = await searchParams;
-  const role = /^\d+$/.test(id) ? getRole(Number(id)) : null;
+  const role = /^\d+$/.test(id) ? await getRole(Number(id)) : null;
   if (!role) {
     return (
       <div className="card">
@@ -27,8 +27,8 @@ export default async function RoleDetailPage({
       </div>
     );
   }
-  const tree = menuTreeFromDb();
-  const granted = role.code === 'super' ? tree.flatMap(permissionCodes) : roleMenuCodes(role.id);
+  const tree = await menuTreeFromDb();
+  const granted = role.code === 'super' ? tree.flatMap(permissionCodes) : await roleMenuCodes(role.id);
   return (
     <>
       <div className="page-head">

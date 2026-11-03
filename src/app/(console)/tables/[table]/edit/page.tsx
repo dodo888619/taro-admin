@@ -21,7 +21,7 @@ export default async function EditRowPage({
 }) {
   const { table } = await params;
   const query = await searchParams;
-  if (!listTableNames().includes(table)) {
+  if (!(await listTableNames()).includes(table)) {
     return (
       <div className="card">
         <h1>没有这张表</h1>
@@ -29,7 +29,7 @@ export default async function EditRowPage({
     );
   }
   const pk = query.pk?.trim() ?? '';
-  const row = pk ? getRow(table, pk) : null;
+  const row = pk ? await getRow(table, pk) : null;
   if (pk && !row) {
     return (
       <div className="card">
@@ -40,7 +40,7 @@ export default async function EditRowPage({
       </div>
     );
   }
-  const form = describeForm(table, row);
+  const form = await describeForm(table, row);
   const warning = deleteWarning(table);
   const access = await requireAdmin();
   const allow = (action: string) => canAccess(access, actionPermission(`table:${table}`, action));

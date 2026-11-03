@@ -16,7 +16,7 @@ export default async function MenusPage({
   const query = await searchParams;
   const access = await requireAdmin();
   const allow = (action: string) => canAccess(access, actionPermission('access:menus', action));
-  const menus = listAdminMenus();
+  const menus = await listAdminMenus();
   const parents = menus.filter((menu) => !menu.href).map((menu) => ({ id: menu.id, name: menu.name }));
   const ordered = menus.flatMap((menu) => {
     if (menu.parentId) return [];

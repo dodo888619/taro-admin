@@ -46,7 +46,7 @@ export default async function TablePage({
 }) {
   const { table } = await params;
   const query = await searchParams;
-  if (!listTableNames().includes(table)) {
+  if (!(await listTableNames()).includes(table)) {
     return (
       <div className="card">
         <h1>没有这张表</h1>
@@ -57,7 +57,7 @@ export default async function TablePage({
   const q = (query.q ?? '').trim();
   const status = table === 'orders' && query.status && ORDER_STATUSES.includes(query.status) ? query.status : '';
   const page = parsePage(query.page);
-  const result = listRows(table, {
+  const result = await listRows(table, {
     page,
     q,
     exact: status ? { status } : undefined,

@@ -6,7 +6,7 @@ export const metadata = { title: '编辑菜单' };
 
 export default async function EditMenuPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const menu = /^\d+$/.test(id) ? getAdminMenu(Number(id)) : null;
+  const menu = /^\d+$/.test(id) ? await getAdminMenu(Number(id)) : null;
   if (!menu) {
     return (
       <div className="card">
@@ -17,7 +17,7 @@ export default async function EditMenuPage({ params }: { params: Promise<{ id: s
       </div>
     );
   }
-  const parents = listAdminMenus()
+  const parents = (await listAdminMenus())
     .filter((item) => !item.href && item.id !== menu.id)
     .map((item) => ({ id: item.id, name: item.name }));
   return (

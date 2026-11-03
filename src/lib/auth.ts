@@ -29,10 +29,10 @@ function safeEqual(left: string, right: string): boolean {
   return timingSafeEqual(a, b);
 }
 
-export function verifyCredentials(
+export async function verifyCredentials(
   username: string,
   password: string,
-): { ok: true } | { ok: false; error: string } {
+): Promise<{ ok: true } | { ok: false; error: string }> {
   return authenticate(username, password);
 }
 
@@ -78,7 +78,7 @@ export async function readSession(): Promise<{ username: string } | null> {
 export async function requireAdmin(): Promise<AdminAccess> {
   const session = await readSession();
   if (!session) redirect('/login');
-  const access = loadAccess(session.username);
+  const access = await loadAccess(session.username);
   if (!access) {
     await clearSession();
     redirect('/login');

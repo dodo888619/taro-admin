@@ -18,7 +18,7 @@ export default async function DashboardPage({
   const access = await requireAdmin();
   const canPublish = canAccess(access, actionPermission('product:new', 'create'));
   const canShip = canAccess(access, actionPermission('table:orders', 'ship'));
-  const data = loadDashboard();
+  const data = await loadDashboard();
   return (
     <>
       <div className="page-head">

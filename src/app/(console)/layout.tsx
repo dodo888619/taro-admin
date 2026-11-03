@@ -10,8 +10,8 @@ export const runtime = 'nodejs';
 
 export default async function ConsoleLayout({ children }: { children: React.ReactNode }) {
   const access = await requireAdmin();
-  const tables = listTableNames();
-  const tree = visibleMenuTree(menuTreeFromDb(), new Set(access.menus), access.super);
+  const tables = await listTableNames();
+  const tree = visibleMenuTree(await menuTreeFromDb(), new Set(access.menus), access.super);
   const pathname = (await headers()).get('x-pathname') ?? '/';
   const code = menuCodeForPath(pathname, tables);
   const allowed = code == null || canAccess(access, code);

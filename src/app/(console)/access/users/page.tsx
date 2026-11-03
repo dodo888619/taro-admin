@@ -16,8 +16,8 @@ export default async function AdminUsersPage({
   const query = await searchParams;
   const access = await requireAdmin();
   const allow = (action: string) => canAccess(access, actionPermission('access:users', action));
-  const users = listAdminUsers();
-  const roles = listRoles();
+  const users = await listAdminUsers();
+  const roles = await listRoles();
   return (
     <>
       <div className="page-head">

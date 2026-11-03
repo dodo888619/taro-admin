@@ -9,7 +9,7 @@ export const metadata = { title: '发布商品' };
 
 export default async function NewProductPage() {
   const access = await requireAdmin();
-  const categories = listCategories();
+  const categories = await listCategories();
   return (
     <>
       <div className="page-head">

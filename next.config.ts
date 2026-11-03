@@ -1,7 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ['better-sqlite3', 'qiniu'],
+  serverExternalPackages: ['mysql2', 'qiniu'],
 };
 
 export default nextConfig;

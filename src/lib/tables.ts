@@ -1,6 +1,5 @@
 import 'server-only';
-import type { Database } from 'better-sqlite3';
-import { getDb } from './db';
+import { db, type Sql } from './db';
 import { TableError } from './errors';
 import {
   columnKind,
@@ -61,17 +60,16 @@ type Coerced = { omit: true } | { omit: false; value: unknown };
 
 export function quoteIdent(name: string): string {
   if (!IDENT.test(name)) throw new TableError('非法字段名');
-  return `"${name}"`;
+  return `\`${name}\``;
 }
 
-export function listTableNames(): string[] {
-  const rows = getDb()
-    .prepare(
-      `SELECT name FROM sqlite_master
-       WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
-       ORDER BY name`,
-    )
-    .all() as Array<{ name: string }>;
+export async function listTableNames(): Promise<string[]> {
+  const rows = await db.all<{ name: string }>(
+    `SELECT TABLE_NAME AS name
+     FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE'
+     ORDER BY TABLE_NAME`,
+  );
   const hidden = new Set([
     'admin_menus',
     'admin_roles',
@@ -84,17 +82,27 @@ export function listTableNames(): string[] {
   return rows.map((row) => row.name).filter((name) => IDENT.test(name) && !hidden.has(name));
 }
 
-export function assertTable(table: string): void {
-  if (!IDENT.test(table) || !listTableNames().includes(table)) {
+export async function assertTable(table: string): Promise<void> {
+  if (!IDENT.test(table) || !(await listTableNames()).includes(table)) {
     throw new TableError('数据表不存在');
   }
 }
 
-export function getColumns(table: string): ColumnInfo[] {
-  assertTable(table);
-  return getDb()
-    .prepare(`PRAGMA table_info(${quoteIdent(table)})`)
-    .all() as ColumnInfo[];
+export async function getColumns(table: string): Promise<ColumnInfo[]> {
+  await assertTable(table);
+  return db.all<ColumnInfo>(
+    `SELECT
+       ORDINAL_POSITION - 1 AS cid,
+       COLUMN_NAME AS name,
+       COLUMN_TYPE AS type,
+       IF(IS_NULLABLE = 'NO', 1, 0) AS notnull,
+       COLUMN_DEFAULT AS dflt_value,
+       IF(COLUMN_KEY = 'PRI', 1, 0) AS pk
+     FROM information_schema.COLUMNS
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+     ORDER BY ORDINAL_POSITION`,
+    table,
+  );
 }
 
 export function primaryKey(columns: ColumnInfo[]): ColumnInfo {
@@ -200,32 +208,31 @@ function displayCell(table: string, column: ColumnInfo, value: unknown): Cell {
   return { text, title };
 }
 
-export function listRows(
+export async function listRows(
   table: string,
   options: { page: number; q?: string; exact?: Record<string, string> },
-): ListResult {
-  const columns = getColumns(table);
+): Promise<ListResult> {
+  const columns = await getColumns(table);
   const pk = primaryKey(columns);
   const page = Number.isInteger(options.page) && options.page > 0 ? options.page : 1;
   const where = buildWhere(table, columns, options.q ?? '', options.exact ?? {});
-  const db = getDb();
-  const totalRow = db
-    .prepare(`SELECT COUNT(*) AS c FROM ${quoteIdent(table)} ${where.sql}`)
-    .get(...where.params) as { c: number };
-  const total = Number(totalRow.c) || 0;
+  const totalRow = await db.get<{ c: number }>(
+    `SELECT COUNT(*) AS c FROM ${quoteIdent(table)} ${where.sql}`,
+    ...where.params,
+  );
+  const total = Number(totalRow?.c) || 0;
   const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const visible = columns.filter((column) => !isSecretColumn(table, column.name));
   const selected = visible.map((column) => quoteIdent(column.name)).join(', ');
-  const rows = db
-    .prepare(
-      `SELECT ${selected}, ${quoteIdent(pk.name)} AS __pk
-       FROM ${quoteIdent(table)} ${where.sql}
-       ORDER BY ${orderClause(columns)}
-       LIMIT ? OFFSET ?`,
-    )
-    .all(...where.params, PAGE_SIZE, (page - 1) * PAGE_SIZE) as Array<
-    Record<string, unknown>
-  >;
+  const rows = await db.all<Record<string, unknown>>(
+    `SELECT ${selected}, ${quoteIdent(pk.name)} AS __pk
+     FROM ${quoteIdent(table)} ${where.sql}
+     ORDER BY ${orderClause(columns)}
+     LIMIT ? OFFSET ?`,
+    ...where.params,
+    PAGE_SIZE,
+    (page - 1) * PAGE_SIZE,
+  );
   return {
     columns: visible.map((column) => ({
       name: column.name,
@@ -282,11 +289,11 @@ function fieldHint(table: string, column: ColumnInfo, creating: boolean): string
   return '';
 }
 
-export function describeForm(
+export async function describeForm(
   table: string,
   row: Record<string, unknown> | null,
-): { title: string; pk: string | null; fields: FieldMeta[] } {
-  const columns = getColumns(table);
+): Promise<{ title: string; pk: string | null; fields: FieldMeta[] }> {
+  const columns = await getColumns(table);
   const pk = primaryKey(columns);
   const creating = row == null;
   const fields = columns
@@ -325,15 +332,17 @@ export function describeForm(
   };
 }
 
-export function getRow(table: string, pkRaw: string): Record<string, unknown> | null {
-  const columns = getColumns(table);
+export async function getRow(
+  table: string,
+  pkRaw: string,
+): Promise<Record<string, unknown> | null> {
+  const columns = await getColumns(table);
   const pk = primaryKey(columns);
-  const row = getDb()
-    .prepare(
-      `SELECT * FROM ${quoteIdent(table)} WHERE ${quoteIdent(pk.name)} = ?`,
-    )
-    .get(bindPk(pk, pkRaw));
-  return (row as Record<string, unknown> | undefined) ?? null;
+  const row = await db.get<Record<string, unknown>>(
+    `SELECT * FROM ${quoteIdent(table)} WHERE ${quoteIdent(pk.name)} = ?`,
+    bindPk(pk, pkRaw),
+  );
+  return row ?? null;
 }
 
 function coerceInput(
@@ -388,12 +397,12 @@ function coerceInput(
   }
 }
 
-function insertRow(
-  db: Database,
+async function insertRow(
+  sql: Sql,
   table: string,
   columns: ColumnInfo[],
   input: Record<string, string>,
-): void {
+): Promise<void> {
   const cols: string[] = [];
   const placeholders: string[] = [];
   const params: unknown[] = [];
@@ -401,7 +410,7 @@ function insertRow(
     if (isReadonlyColumn(table, column.name)) continue;
     if (AUTO_TIME.has(column.name)) {
       cols.push(quoteIdent(column.name));
-      placeholders.push(`datetime('now')`);
+      placeholders.push('UTC_TIMESTAMP()');
       continue;
     }
     const raw = input[column.name] ?? '';
@@ -413,19 +422,20 @@ function insertRow(
     params.push(coerced.value);
   }
   if (cols.length === 0) throw new TableError('没有可写入的字段');
-  db.prepare(
+  await sql.run(
     `INSERT INTO ${quoteIdent(table)} (${cols.join(', ')}) VALUES (${placeholders.join(', ')})`,
-  ).run(...params);
+    ...params,
+  );
 }
 
-function updateRow(
-  db: Database,
+async function updateRow(
+  sql: Sql,
   table: string,
   columns: ColumnInfo[],
   pk: ColumnInfo,
   pkRaw: string,
   input: Record<string, string>,
-): void {
+): Promise<void> {
   const pkValue = bindPk(pk, pkRaw);
   const sets: string[] = [];
   const params: unknown[] = [];
@@ -433,7 +443,7 @@ function updateRow(
     if (column.name === pk.name || column.name === 'createdAt') continue;
     if (isReadonlyColumn(table, column.name)) continue;
     if (column.name === 'updatedAt') {
-      sets.push(`${quoteIdent(column.name)} = datetime('now')`);
+      sets.push(`${quoteIdent(column.name)} = UTC_TIMESTAMP()`);
       continue;
     }
     if (!(column.name in input)) continue;
@@ -444,52 +454,58 @@ function updateRow(
   }
   if (sets.length === 0) throw new TableError('没有可保存的字段');
   params.push(pkValue);
-  const result = db
-    .prepare(
-      `UPDATE ${quoteIdent(table)} SET ${sets.join(', ')} WHERE ${quoteIdent(pk.name)} = ?`,
-    )
-    .run(...params);
-  if (result.changes === 0) throw new TableError('记录不存在');
+  const result = await sql.run(
+    `UPDATE ${quoteIdent(table)} SET ${sets.join(', ')} WHERE ${quoteIdent(pk.name)} = ?`,
+    ...params,
+  );
+  if (result.changes === 0) {
+    const exists = await sql.get(
+      `SELECT 1 AS ok FROM ${quoteIdent(table)} WHERE ${quoteIdent(pk.name)} = ?`,
+      pkValue,
+    );
+    if (!exists) throw new TableError('记录不存在');
+  }
 }
 
-export function saveRow(
+export async function saveRow(
   table: string,
   pkRaw: string,
   input: Record<string, string>,
-): void {
-  const columns = getColumns(table);
+): Promise<void> {
+  const columns = await getColumns(table);
   const pk = primaryKey(columns);
-  const db = getDb();
   if (pkRaw) {
-    updateRow(db, table, columns, pk, pkRaw, input);
+    await updateRow(db, table, columns, pk, pkRaw, input);
     return;
   }
-  insertRow(db, table, columns, input);
+  await insertRow(db, table, columns, input);
 }
 
-export function removeRow(table: string, pkRaw: string): void {
-  const columns = getColumns(table);
+export async function removeRow(table: string, pkRaw: string): Promise<void> {
+  const columns = await getColumns(table);
   const pk = primaryKey(columns);
   const pkValue = bindPk(pk, pkRaw);
-  const db = getDb();
   if (table === 'products') {
-    const count = db
-      .prepare('SELECT COUNT(*) AS c FROM orders WHERE productId = ?')
-      .get(pkValue) as { c: number };
-    if (count.c > 0) {
+    const count = await db.get<{ c: number }>(
+      'SELECT COUNT(*) AS c FROM orders WHERE productId = ?',
+      pkValue,
+    );
+    if ((count?.c ?? 0) > 0) {
       throw new TableError('已有订单引用该商品，请改为下架而不是删除');
     }
   }
   if (table === 'product_skus') {
-    const sku = db
-      .prepare('SELECT locked, code FROM product_skus WHERE id = ?')
-      .get(pkValue) as { locked: number; code: string } | undefined;
+    const sku = await db.get<{ locked: number; code: string }>(
+      'SELECT locked, code FROM product_skus WHERE id = ?',
+      pkValue,
+    );
     if (sku && sku.locked > 0) {
       throw new TableError(`规格 ${sku.code} 仍有锁定库存，不能删除`);
     }
   }
-  const result = db
-    .prepare(`DELETE FROM ${quoteIdent(table)} WHERE ${quoteIdent(pk.name)} = ?`)
-    .run(pkValue);
+  const result = await db.run(
+    `DELETE FROM ${quoteIdent(table)} WHERE ${quoteIdent(pk.name)} = ?`,
+    pkValue,
+  );
   if (result.changes === 0) throw new TableError('记录不存在');
 }

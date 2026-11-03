@@ -230,7 +230,7 @@ export function columnLabel(table: string, column: string): string {
 
 export function columnKind(type: string): ColumnKind {
   const normalized = type.toLowerCase();
-  if (normalized.includes('bool')) return 'boolean';
+  if (normalized.includes('bool') || normalized.startsWith('tinyint')) return 'boolean';
   if (normalized.includes('int')) return 'integer';
   if (
     normalized.includes('real') ||
