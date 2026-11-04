@@ -27,6 +27,7 @@ import { actionPermission } from './menus';
 import { shipPendingOrder } from './orders';
 import { withNotice } from './paths';
 import { saveProductRecord, type ProductInput } from './products';
+import { tableAllowsCreate } from './schema';
 import { removeRow, saveRow } from './tables';
 
 export type FormState = { error: string } | null;
@@ -34,6 +35,7 @@ export type FormState = { error: string } | null;
 function refreshMall() {
   revalidatePath('/');
   revalidatePath('/products');
+  revalidatePath('/orders/ship-review');
   revalidatePath('/tables', 'layout');
 }
 
@@ -96,7 +98,21 @@ export async function saveRowAction(
 ): Promise<FormState> {
   const table = String(formData.get('table') ?? '');
   const pk = String(formData.get('pk') ?? '');
-  await guardMenu(actionPermission(`table:${table}`, pk ? 'update' : 'create'));
+  if (!pk && !tableAllowsCreate(table)) {
+    const errors: Record<string, string> = {
+      orders: '订单不能在后台新增',
+      users: '用户不能在后台新增',
+      product_skus: '规格请在发布/编辑商品里添加',
+    };
+    return { error: errors[table] ?? '该表不能在后台新增' };
+  }
+  if (table === 'products') {
+    await guardMenu(
+      pk ? actionPermission('product:list', 'update') : actionPermission('product:new', 'create'),
+    );
+  } else {
+    await guardMenu(actionPermission(`table:${table}`, pk ? 'update' : 'create'));
+  }
   const input: Record<string, string> = {};
   for (const [key, value] of formData.entries()) {
     if (typeof value !== 'string' || key === 'table' || key === 'pk') continue;
@@ -113,7 +129,11 @@ export async function saveRowAction(
 
 export async function deleteRowAction(formData: FormData): Promise<void> {
   const table = String(formData.get('table') ?? '');
-  await guardMenu(actionPermission(`table:${table}`, 'delete'));
+  if (table === 'products') {
+    await guardMenu(actionPermission('product:list', 'update'));
+  } else {
+    await guardMenu(actionPermission(`table:${table}`, 'delete'));
+  }
   const pk = String(formData.get('pk') ?? '');
   try {
     await removeRow(table, pk);
@@ -131,8 +151,13 @@ export async function deleteRowAction(formData: FormData): Promise<void> {
 }
 
 export async function shipOrder(formData: FormData): Promise<void> {
-  await guardMenu(actionPermission('table:orders', 'ship'));
-  const back = String(formData.get('back') ?? '/tables/orders');
+  const access = await requireAdmin();
+  const allowed =
+    canAccess(access, actionPermission('order:ship-review', 'ship')) ||
+    canAccess(access, actionPermission('table:orders', 'ship'));
+  if (!allowed) redirect('/forbidden');
+
+  const back = String(formData.get('back') ?? '/orders/ship-review');
   try {
     await shipPendingOrder(Number(formData.get('id')));
     refreshMall();

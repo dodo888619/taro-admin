@@ -166,6 +166,12 @@ function buildWhere(
   }
   for (const [key, value] of Object.entries(exact)) {
     if (!value || !columns.some((column) => column.name === key)) continue;
+    // cancelled 与 failed 对外合并为「已取消」
+    if (table === 'orders' && key === 'status' && value === 'cancelled') {
+      parts.push(`${quoteIdent(key)} IN (?, ?)`);
+      params.push('cancelled', 'failed');
+      continue;
+    }
     parts.push(`${quoteIdent(key)} = ?`);
     params.push(value);
   }
@@ -283,7 +289,7 @@ function fieldHint(table: string, column: ColumnInfo, creating: boolean): string
   }
   if (creating && column.pk) {
     return columnKind(column.type) === 'integer'
-      ? '留空则自动生成'
+      ? '系统自动生成，无需填写'
       : '必填，且不能与已有记录重复';
   }
   return '';
@@ -297,7 +303,12 @@ export async function describeForm(
   const pk = primaryKey(columns);
   const creating = row == null;
   const fields = columns
-    .filter((column) => !AUTO_TIME.has(column.name))
+    .filter((column) => {
+      if (AUTO_TIME.has(column.name)) return false;
+      // 整型自增主键新增时不展示，由数据库自动生成
+      if (creating && column.pk > 0 && columnKind(column.type) === 'integer') return false;
+      return true;
+    })
     .map((column) => {
       const readonly = isReadonlyColumn(table, column.name) || (!creating && column.pk > 0);
       const kind = columnKind(column.type);

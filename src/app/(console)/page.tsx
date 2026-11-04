@@ -1,7 +1,6 @@
 import Link from 'next/link';
 import { Flash } from '@/components/Flash';
 import { StatusBadge } from '@/components/StatusBadge';
-import { shipOrder } from '@/lib/actions';
 import { canAccess } from '@/lib/access';
 import { requireAdmin } from '@/lib/auth';
 import { loadDashboard } from '@/lib/dashboard';
@@ -17,7 +16,9 @@ export default async function DashboardPage({
   const query = await searchParams;
   const access = await requireAdmin();
   const canPublish = canAccess(access, actionPermission('product:new', 'create'));
-  const canShip = canAccess(access, actionPermission('table:orders', 'ship'));
+  const canShip =
+    canAccess(access, actionPermission('order:ship-review', 'ship')) ||
+    canAccess(access, actionPermission('table:orders', 'ship'));
   const data = await loadDashboard();
   return (
     <>
@@ -42,8 +43,8 @@ export default async function DashboardPage({
           <span>在售商品</span>
           <strong>{data.productsOn}</strong>
         </Link>
-        <Link className="stat" href="/tables/orders?status=pending_ship">
-          <span>待发货</span>
+        <Link className="stat" href="/orders/ship-review">
+          <span>待发货审核</span>
           <strong>{data.pendingShip}</strong>
         </Link>
         <Link className="stat" href="/tables/user_feedbacks">
@@ -89,13 +90,7 @@ export default async function DashboardPage({
                     <td>{order.createdAt}</td>
                     <td>
                       {order.status === 'pending_ship' && canShip ? (
-                        <form action={shipOrder}>
-                          <input type="hidden" name="id" value={order.id} />
-                          <input type="hidden" name="back" value="/" />
-                          <button className="btn btn-tiny" type="submit">
-                            发货
-                          </button>
-                        </form>
+                        <Link href={`/orders/ship-review/${order.id}`}>去审核</Link>
                       ) : (
                         '—'
                       )}

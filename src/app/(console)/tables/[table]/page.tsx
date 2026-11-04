@@ -1,11 +1,10 @@
 import Link from 'next/link';
 import { Flash } from '@/components/Flash';
 import { StatusBadge } from '@/components/StatusBadge';
-import { shipOrder } from '@/lib/actions';
 import { canAccess } from '@/lib/access';
 import { requireAdmin } from '@/lib/auth';
 import { actionPermission } from '@/lib/menus';
-import { orderStatusLabel, tableLabel } from '@/lib/schema';
+import { orderStatusLabel, tableAllowsCreate, tableLabel } from '@/lib/schema';
 import { listRows, listTableNames } from '@/lib/tables';
 
 const ORDER_STATUSES = [
@@ -14,7 +13,6 @@ const ORDER_STATUSES = [
   'shipped',
   'completed',
   'cancelled',
-  'failed',
 ];
 
 function parsePage(value: string | undefined): number {
@@ -62,9 +60,18 @@ export default async function TablePage({
     q,
     exact: status ? { status } : undefined,
   });
-  const back = listHref(table, result.page, q, status);
   const access = await requireAdmin();
-  const allow = (action: string) => canAccess(access, actionPermission(`table:${table}`, action));
+  const allow = (action: string) => {
+    if (action === 'create' && !tableAllowsCreate(table)) return false;
+    if (table === 'products') {
+      if (action === 'create') return canAccess(access, actionPermission('product:new', 'create'));
+      if (action === 'view') return canAccess(access, actionPermission('product:list', 'view'));
+      if (action === 'update' || action === 'delete') {
+        return canAccess(access, actionPermission('product:list', 'update'));
+      }
+    }
+    return canAccess(access, actionPermission(`table:${table}`, action));
+  };
   return (
     <>
       <div className="page-head">
@@ -72,7 +79,13 @@ export default async function TablePage({
           <h1>{tableLabel(table)}</h1>
           <p className="muted">{table}</p>
         </div>
-        {allow('create') ? (
+        {table === 'products' ? (
+          allow('create') ? (
+            <Link className="btn btn-primary" href="/products/new">
+              发布商品
+            </Link>
+          ) : null
+        ) : allow('create') ? (
           <Link className="btn btn-primary" href={`/tables/${table}/edit`}>
             新增
           </Link>
@@ -81,11 +94,26 @@ export default async function TablePage({
       <Flash saved={query.saved} error={query.error} />
       {table === 'products' ? (
         <p className="note">
-          上架新商品请走<Link href="/products/new">发布商品</Link>，以便同时写入规格和提示。
+          日常维护请走<Link href="/products">商品列表</Link>
+          。本页为原始表，上架请用发布商品以便同时写入规格和提示。
         </p>
       ) : null}
       {table === 'orders' ? (
-        <p className="note">发货请用列表中的按钮。直接改状态不会退回积分或调整库存。</p>
+        <p className="note">
+          订单由用户下单产生，后台不能新增。待发货请走
+          <Link href="/orders/ship-review">发货审核</Link>
+          。直接改状态不会退回积分或调整库存。
+        </p>
+      ) : null}
+      {table === 'users' ? (
+        <p className="note">用户由客户端注册/登录产生，后台不能新增，仅可查看与维护。</p>
+      ) : null}
+      {table === 'product_skus' ? (
+        <p className="note">
+          规格请在
+          <Link href="/products/new">发布商品</Link>
+          或商品编辑里维护，本页仅可查看与改现有规格。
+        </p>
       ) : null}
       <div className="toolbar">
         <form method="get">
@@ -138,14 +166,11 @@ export default async function TablePage({
                       {allow('update') ? (
                         <Link href={`/tables/${table}/edit?pk=${encodeURIComponent(row.pk)}`}>编辑</Link>
                       ) : null}
-                      {table === 'orders' && row.status === 'pending_ship' && allow('ship') ? (
-                        <form action={shipOrder}>
-                          <input type="hidden" name="id" value={row.pk} />
-                          <input type="hidden" name="back" value={back} />
-                          <button className="btn btn-tiny" type="submit">
-                            发货
-                          </button>
-                        </form>
+                      {table === 'orders' &&
+                      row.status === 'pending_ship' &&
+                      (allow('ship') ||
+                        canAccess(access, actionPermission('order:ship-review', 'ship'))) ? (
+                        <Link href={`/orders/ship-review/${row.pk}`}>去审核</Link>
                       ) : null}
                     </div>
                   </td>

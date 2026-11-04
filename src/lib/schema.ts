@@ -9,18 +9,18 @@ export type TableGroup = {
 export const TABLE_GROUPS: TableGroup[] = [
   {
     id: 'mall',
-    title: '商品与订单',
-    tables: ['products', 'product_skus', 'product_categories', 'orders'],
+    title: '商品',
+    tables: ['products', 'product_skus', 'product_categories'],
+  },
+  {
+    id: 'order',
+    title: '订单',
+    tables: ['orders'],
   },
   {
     id: 'users',
     title: '用户',
-    tables: [
-      'users',
-      'user_profiles',
-      'user_addresses',
-      'user_feedbacks',
-    ],
+    tables: ['users', 'user_profiles', 'user_addresses'],
   },
   {
     id: 'points',
@@ -47,7 +47,19 @@ export const TABLE_GROUPS: TableGroup[] = [
   {
     id: 'ops',
     title: '运营',
-    tables: ['banners', 'survey_questions', 'user_survey_responses'],
+    tables: [
+      'banners',
+      'survey_questions',
+      'user_survey_responses',
+      'user_check_in_subscribes',
+      'group_members',
+      'user_feedbacks',
+    ],
+  },
+  {
+    id: 'sport',
+    title: '运动',
+    tables: ['sport_days', 'sport_tracks'],
   },
   {
     id: 'system',
@@ -81,6 +93,10 @@ const TABLE_LABELS: Record<string, string> = {
   banners: '广告位',
   survey_questions: '问卷题目',
   user_survey_responses: '问卷答卷',
+  user_check_in_subscribes: '签到订阅提醒',
+  group_members: '微信群参与统计',
+  sport_days: '每日运动汇总',
+  sport_tracks: '运动轨迹',
 };
 
 const COLUMN_LABELS: Record<string, string> = {
@@ -178,6 +194,17 @@ const COLUMN_LABELS: Record<string, string> = {
   options: '选项 JSON',
   placeholder: '占位提示',
   answers: '答案 JSON',
+  day: '日期',
+  steps: '步数',
+  distanceM: '距离（米）',
+  durationSec: '时长（秒）',
+  placeName: '地点名称',
+  placeAddress: '地点地址',
+  placeLatitude: '纬度',
+  placeLongitude: '经度',
+  placeSource: '地点来源',
+  startedAt: '开始时间',
+  pointsJson: '轨迹点 JSON',
 };
 
 const TABLE_COLUMN_LABELS: Record<string, Record<string, string>> = {
@@ -203,6 +230,7 @@ const JSON_COLUMNS: Record<string, string[]> = {
   learn_exercises: ['questions'],
   survey_questions: ['options'],
   user_survey_responses: ['answers'],
+  sport_tracks: ['pointsJson'],
 };
 
 const SECRET_COLUMNS: Record<string, string[]> = {
@@ -222,6 +250,11 @@ type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export function tableLabel(table: string): string {
   return TABLE_LABELS[table] ?? table;
+}
+
+/** 由业务页维护或由客户端产生的表，后台原始表不允许手工新增 */
+export function tableAllowsCreate(table: string): boolean {
+  return table !== 'orders' && table !== 'users' && table !== 'product_skus';
 }
 
 export function columnLabel(table: string, column: string): string {
@@ -299,7 +332,7 @@ export function orderStatusLabel(status: string): string {
     case 'cancelled':
       return '已取消';
     case 'failed':
-      return '已失败';
+      return '已取消';
     default: {
       const exhaustive: never = status;
       return exhaustive;

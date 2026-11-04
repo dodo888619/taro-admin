@@ -46,7 +46,9 @@ export async function createSession(username: string): Promise<void> {
     sameSite: 'lax',
     path: '/',
     maxAge: MAX_AGE_MS / 1000,
-    secure: process.env.NODE_ENV === 'production',
+    // 本地 HTTP 不能开 Secure，否则浏览器不存 cookie，点菜单会回到登录页。
+    // HTTPS 部署时在环境变量设 ADMIN_COOKIE_SECURE=1。
+    secure: process.env.ADMIN_COOKIE_SECURE === '1',
   });
 }
 

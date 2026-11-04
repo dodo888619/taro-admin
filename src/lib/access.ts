@@ -76,21 +76,18 @@ async function syncMenus(): Promise<void> {
     await db.run(
       `INSERT INTO admin_menus (code, name, href, sort, enabled, createdAt, updatedAt)
        VALUES (?, ?, ?, ?, 1, UTC_TIMESTAMP(), UTC_TIMESTAMP()) AS new
-       ON DUPLICATE KEY UPDATE href = new.href, updatedAt = UTC_TIMESTAMP()`,
+       ON DUPLICATE KEY UPDATE
+         name = new.name,
+         href = new.href,
+         sort = new.sort,
+         enabled = 1,
+         updatedAt = UTC_TIMESTAMP()`,
       seed.code,
       seed.name,
       seed.href,
       seed.sort,
     );
   }
-  await db.run(
-    `UPDATE admin_menus SET name = '系统管理', updatedAt = UTC_TIMESTAMP()
-     WHERE code = 'group:access' AND name = '权限'`,
-  );
-  await db.run(
-    `UPDATE admin_menus SET name = '工具', updatedAt = UTC_TIMESTAMP()
-     WHERE code = 'group:system' AND name = '系统'`,
-  );
   const ids = new Map(
     (await db.all<{ id: number; code: string }>('SELECT id, code FROM admin_menus')).map((row) => [
       row.code,
@@ -98,10 +95,9 @@ async function syncMenus(): Promise<void> {
     ]),
   );
   for (const seed of seeds) {
-    if (!seed.parentCode) continue;
     await db.run(
-      'UPDATE admin_menus SET parentId = ? WHERE code = ? AND parentId IS NULL',
-      ids.get(seed.parentCode) ?? null,
+      'UPDATE admin_menus SET parentId = ? WHERE code = ?',
+      seed.parentCode ? (ids.get(seed.parentCode) ?? null) : null,
       seed.code,
     );
   }

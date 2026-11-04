@@ -1,4 +1,4 @@
-import { TABLE_GROUPS, tableLabel } from './schema';
+import { TABLE_GROUPS, tableAllowsCreate, tableLabel } from './schema';
 
 export type MenuAction = {
   code: string;
@@ -27,8 +27,32 @@ export function menuActions(menuCode: string): MenuAction[] {
     { code: 'view', label: '查看' },
     { code: 'update', label: '编辑' },
   ];
-  if (menuCode === 'table:orders') return [...CRUD, { code: 'ship', label: '发货' }];
-  if (menuCode.startsWith('table:') || menuCode.startsWith('access:')) return CRUD;
+  if (menuCode === 'order:ship-review') {
+    return [
+      { code: 'view', label: '查看' },
+      { code: 'ship', label: '审核发货' },
+    ];
+  }
+  if (menuCode === 'table:orders') {
+    return [
+      { code: 'view', label: '查看' },
+      { code: 'update', label: '编辑' },
+      { code: 'delete', label: '删除' },
+      { code: 'ship', label: '发货' },
+    ];
+  }
+  if (menuCode.startsWith('table:')) {
+    const table = menuCode.slice('table:'.length);
+    if (!tableAllowsCreate(table)) {
+      return [
+        { code: 'view', label: '查看' },
+        { code: 'update', label: '编辑' },
+        { code: 'delete', label: '删除' },
+      ];
+    }
+    return CRUD;
+  }
+  if (menuCode.startsWith('access:')) return CRUD;
   return [{ code: 'view', label: '查看' }];
 }
 
@@ -41,11 +65,7 @@ export function permissionCodes(node: MenuNode): string[] {
   return (node.actions ?? []).map((action) => actionPermission(node.code, action.code));
 }
 
-const TOP_MENUS: MenuNode[] = [
-  { code: 'dashboard', label: '概览', href: '/' },
-  { code: 'product:new', label: '发布商品', href: '/products/new' },
-  { code: 'product:list', label: '商品列表', href: '/products' },
-];
+const TOP_MENUS: MenuNode[] = [{ code: 'dashboard', label: '概览', href: '/' }];
 
 const ACCESS_MENUS: MenuNode = {
   code: 'group:access',
@@ -57,25 +77,40 @@ const ACCESS_MENUS: MenuNode = {
   ],
 };
 
+const GROUP_EXTRA_MENUS: Record<string, MenuNode[]> = {
+  mall: [
+    { code: 'product:new', label: '发布商品', href: '/products/new' },
+    { code: 'product:list', label: '商品列表', href: '/products' },
+  ],
+  order: [{ code: 'order:ship-review', label: '发货审核', href: '/orders/ship-review' }],
+};
+
+/** 已有专用管理页的表，不在侧栏再挂一份原始表菜单 */
+const MENU_HIDDEN_TABLES = new Set(['products']);
+
 export function buildMenuTree(tableNames: string[]): MenuNode[] {
   const known = new Set<string>();
   const groups: MenuNode[] = [];
   for (const group of TABLE_GROUPS) {
-    const children = group.tables
+    const tableChildren = group.tables
       .filter((name) => tableNames.includes(name))
-      .map((name) => {
+      .flatMap((name) => {
         known.add(name);
-        return {
-          code: `table:${name}`,
-          label: tableLabel(name),
-          href: `/tables/${name}`,
-        };
+        if (MENU_HIDDEN_TABLES.has(name)) return [];
+        return [
+          {
+            code: `table:${name}`,
+            label: tableLabel(name),
+            href: `/tables/${name}`,
+          },
+        ];
       });
+    const children = [...(GROUP_EXTRA_MENUS[group.id] ?? []), ...tableChildren];
     if (children.length > 0) {
       groups.push({ code: `group:${group.id}`, label: group.title, children });
     }
   }
-  const rest = tableNames.filter((name) => !known.has(name));
+  const rest = tableNames.filter((name) => !known.has(name) && !MENU_HIDDEN_TABLES.has(name));
   if (rest.length > 0) {
     groups.push({
       code: 'group:other',
@@ -163,10 +198,19 @@ export function menuCodeForPath(pathname: string, tableNames: string[]): string 
   if (pathname === '/' || pathname === '/forbidden') return pathname === '/' ? 'dashboard' : null;
   if (pathname === '/products/new') return 'product:new';
   if (pathname === '/products' || /^\/products\/\d+$/.test(pathname)) return 'product:list';
+  if (
+    pathname === '/orders/ship-review' ||
+    /^\/orders\/ship-review\/\d+$/.test(pathname)
+  ) {
+    return 'order:ship-review';
+  }
   if (pathname === '/access/roles' || pathname.startsWith('/access/roles/')) return 'access:roles';
   if (pathname === '/access/users' || pathname.startsWith('/access/users/')) return 'access:users';
   if (pathname === '/access/menus' || pathname.startsWith('/access/menus/')) return 'access:menus';
   const match = pathname.match(/^\/tables\/([A-Za-z_][A-Za-z0-9_]*)(?:\/edit)?$/);
-  if (match && tableNames.includes(match[1])) return `table:${match[1]}`;
+  if (match && tableNames.includes(match[1])) {
+    if (match[1] === 'products') return 'product:list';
+    return `table:${match[1]}`;
+  }
   return '__none';
 }
