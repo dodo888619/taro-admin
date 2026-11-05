@@ -1,8 +1,10 @@
 import Link from 'next/link';
+import { BannerPositionGroups } from '@/components/BannerPositionGroups';
 import { Flash } from '@/components/Flash';
 import { StatusBadge } from '@/components/StatusBadge';
 import { canAccess } from '@/lib/access';
 import { requireAdmin } from '@/lib/auth';
+import { listBannerPositionGroups } from '@/lib/banner-positions';
 import { actionPermission } from '@/lib/menus';
 import { orderStatusLabel, tableAllowsCreate, tableLabel } from '@/lib/schema';
 import { listRows, listTableNames } from '@/lib/tables';
@@ -55,11 +57,6 @@ export default async function TablePage({
   const q = (query.q ?? '').trim();
   const status = table === 'orders' && query.status && ORDER_STATUSES.includes(query.status) ? query.status : '';
   const page = parsePage(query.page);
-  const result = await listRows(table, {
-    page,
-    q,
-    exact: status ? { status } : undefined,
-  });
   const access = await requireAdmin();
   const allow = (action: string) => {
     if (action === 'create' && !tableAllowsCreate(table)) return false;
@@ -72,6 +69,42 @@ export default async function TablePage({
     }
     return canAccess(access, actionPermission(`table:${table}`, action));
   };
+
+  if (table === 'banner_positions') {
+    const { groups, orphanBanners } = await listBannerPositionGroups();
+    return (
+      <>
+        <div className="page-head">
+          <div>
+            <h1>{tableLabel(table)}</h1>
+            <p className="muted">按展示位置分组查看广告位</p>
+          </div>
+          <div className="inline">
+            <Link href="/tables/banners">广告位原始表</Link>
+            {allow('create') ? (
+              <Link className="btn btn-primary" href={`/tables/${table}/edit`}>
+                新增位置
+              </Link>
+            ) : null}
+          </div>
+        </div>
+        <Flash saved={query.saved} error={query.error} />
+        <BannerPositionGroups
+          groups={groups}
+          orphanBanners={orphanBanners}
+          canEditPosition={allow('update')}
+          canCreateBanner={canAccess(access, actionPermission('table:banners', 'create'))}
+          canEditBanner={canAccess(access, actionPermission('table:banners', 'update'))}
+        />
+      </>
+    );
+  }
+
+  const result = await listRows(table, {
+    page,
+    q,
+    exact: status ? { status } : undefined,
+  });
   return (
     <>
       <div className="page-head">
@@ -96,6 +129,13 @@ export default async function TablePage({
         <p className="note">
           日常维护请走<Link href="/products">商品列表</Link>
           。本页为原始表，上架请用发布商品以便同时写入规格和提示。
+        </p>
+      ) : null}
+      {table === 'banners' ? (
+        <p className="note">
+          建议在
+          <Link href="/tables/banner_positions">广告展示位置</Link>
+          中按位置分组维护广告位。
         </p>
       ) : null}
       {table === 'orders' ? (

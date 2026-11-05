@@ -76,7 +76,6 @@ export function ProductForm({
       enabled: String(form.get('enabled') ?? '1') === '1',
       skus: skus.map((sku) => ({
         id: sku.id,
-        code: sku.code,
         name: sku.name,
         stock: sku.stock,
         sort: sku.sort,
@@ -394,7 +393,8 @@ export function ProductForm({
           <div className="sku-row" key={sku.id ?? `new-${index}`}>
             <label className="field">
               <span>规格编码</span>
-              <input value={sku.code} required maxLength={64} onChange={(event) => patchSku(index, { code: event.target.value })} />
+              <p className="readonly">{sku.code || '保存后自动生成'}</p>
+              <p className="hint">系统生成，不可编辑</p>
             </label>
             <label className="field">
               <span>规格名称</span>

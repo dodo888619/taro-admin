@@ -1,5 +1,6 @@
 import 'server-only';
-import { db, isDuplicateError, transaction } from './db';
+import { randomBytes } from 'crypto';
+import { db, isDuplicateError, transaction, type Sql } from './db';
 import { TableError } from './errors';
 import { publicImageUrl } from './qiniu';
 
@@ -80,7 +81,6 @@ export type ProductInput = {
   enabled: boolean;
   skus: Array<{
     id?: number;
-    code: string;
     name: string;
     stock: string;
     sort: string;
@@ -324,28 +324,30 @@ function parseSkus(input: ProductInput['skus']) {
   if (input.length < 1 || input.length > 30) {
     throw new TableError('请至少填写 1 个规格，最多 30 个');
   }
-  const seen = new Set<string>();
   return input.map((sku) => {
-    const code = sku.code.trim();
     const name = sku.name.trim();
-    if (!/^[\w.-]+$/.test(code) || code.length > 64) {
-      throw new TableError('规格编码仅支持字母、数字、下划线、点、短横线，最长 64 位');
-    }
     if (!name || name.length > 64) throw new TableError('规格名称需为 1–64 个字');
-    if (seen.has(code)) throw new TableError(`规格编码 ${code} 重复`);
-    seen.add(code);
     if (sku.id != null && (!Number.isInteger(sku.id) || sku.id <= 0)) {
       throw new TableError('规格无效');
     }
     return {
       id: sku.id,
-      code,
       name,
       stock: requireInt(sku.stock, '库存', 0),
       sort: requireInt(sku.sort || '0', '规格排序', 0),
       enabled: sku.enabled ? 1 : 0,
     };
   });
+}
+
+async function allocateSkuCode(sql: Sql): Promise<string> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const code = `sku_${Date.now().toString(36)}_${randomBytes(3).toString('hex')}`;
+    if (code.length > 64) continue;
+    const exists = await sql.get('SELECT id FROM product_skus WHERE code = ? LIMIT 1', code);
+    if (!exists) return code;
+  }
+  throw new TableError('生成规格编码失败，请重试');
 }
 
 function parseSpecs(input: SpecGroup[]): SpecGroup[] {
@@ -494,9 +496,8 @@ export async function saveProductRecord(input: ProductInput): Promise<number> {
         if (sku.id) {
           const updated = await sql.run(
             `UPDATE product_skus
-             SET code = ?, name = ?, stock = ?, sort = ?, enabled = ?, updatedAt = UTC_TIMESTAMP()
+             SET name = ?, stock = ?, sort = ?, enabled = ?, updatedAt = UTC_TIMESTAMP()
              WHERE id = ? AND productId = ?`,
-            sku.code,
             sku.name,
             sku.stock,
             sku.sort,
@@ -513,12 +514,13 @@ export async function saveProductRecord(input: ProductInput): Promise<number> {
             if (!exists) throw new TableError('规格不存在或不属于该商品');
           }
         } else {
+          const code = await allocateSkuCode(sql);
           await sql.run(
             `INSERT INTO product_skus
                (productId, code, name, stock, locked, sort, enabled, createdAt, updatedAt)
              VALUES (?, ?, ?, ?, 0, ?, ?, UTC_TIMESTAMP(), UTC_TIMESTAMP())`,
             productId,
-            sku.code,
+            code,
             sku.name,
             sku.stock,
             sku.sort,

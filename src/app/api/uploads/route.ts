@@ -9,12 +9,17 @@ export async function POST(request: Request) {
   const form = await request.formData();
   const file = form.get('file');
   if (!(file instanceof File)) return Response.json({ error: '请选择图片' }, { status: 400 });
+  const folderRaw = form.get('folder');
+  const folder = typeof folderRaw === 'string' && folderRaw.trim() ? folderRaw.trim() : 'products';
   try {
-    const stored = await uploadProductImage({
-      buffer: Buffer.from(await file.arrayBuffer()),
-      name: file.name,
-      type: file.type,
-    });
+    const stored = await uploadProductImage(
+      {
+        buffer: Buffer.from(await file.arrayBuffer()),
+        name: file.name,
+        type: file.type,
+      },
+      folder,
+    );
     return Response.json({ stored, url: publicImageUrl(stored) });
   } catch (error) {
     const message = error instanceof Error ? error.message : '上传失败';

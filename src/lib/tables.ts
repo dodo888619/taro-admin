@@ -2,16 +2,25 @@ import 'server-only';
 import { db, type Sql } from './db';
 import { TableError } from './errors';
 import {
+  ensureBannerPositions,
+  listBannerPositionOptions,
+} from './banner-positions';
+import {
   columnKind,
   columnLabel,
+  imageUploadFolder,
+  isImageUploadColumn,
   isJsonColumn,
   isLongField,
   isReadonlyColumn,
   isSecretColumn,
   orderStatusLabel,
+  selectOptionLabel,
+  selectOptions,
   tableLabel,
   varcharLimit,
   type ColumnKind,
+  type SelectOption,
 } from './schema';
 
 export type ColumnInfo = {
@@ -34,6 +43,9 @@ export type FieldMeta = {
   maxLength: number | null;
   hint: string;
   value: string;
+  options: SelectOption[] | null;
+  imageUpload: boolean;
+  imageFolder: string;
 };
 
 export type Cell = { text: string; title: string };
@@ -181,7 +193,30 @@ function buildWhere(
   };
 }
 
-function displayCell(table: string, column: ColumnInfo, value: unknown): Cell {
+async function resolveSelectOptions(
+  table: string,
+  column: string,
+  currentValue?: string,
+): Promise<SelectOption[] | null> {
+  if (table === 'banners' && column === 'position') {
+    const options = await listBannerPositionOptions(true);
+    const current = currentValue?.trim();
+    if (current && !options.some((option) => option.value === current)) {
+      const all = await listBannerPositionOptions(false);
+      const fallback = all.find((option) => option.value === current);
+      options.unshift(fallback ?? { value: current, label: current });
+    }
+    return options;
+  }
+  return selectOptions(table, column);
+}
+
+function displayCell(
+  table: string,
+  column: ColumnInfo,
+  value: unknown,
+  optionLabels?: Map<string, string>,
+): Cell {
   if (isSecretColumn(table, column.name)) {
     const text = value == null || value === '' ? '—' : '••••';
     return { text, title: text };
@@ -198,12 +233,19 @@ function displayCell(table: string, column: ColumnInfo, value: unknown): Cell {
     case 'datetime':
       text = String(value);
       break;
-    case 'text':
-      text =
-        table === 'orders' && column.name === 'status'
-          ? orderStatusLabel(String(value))
-          : String(value);
+    case 'text': {
+      const raw = String(value);
+      if (table === 'orders' && column.name === 'status') {
+        text = orderStatusLabel(raw);
+      } else if (optionLabels?.has(raw)) {
+        text = optionLabels.get(raw) ?? raw;
+      } else if (selectOptions(table, column.name)) {
+        text = selectOptionLabel(table, column.name, raw);
+      } else {
+        text = raw;
+      }
       break;
+    }
     default: {
       const exhaustive: never = kind;
       text = String(exhaustive);
@@ -218,6 +260,9 @@ export async function listRows(
   table: string,
   options: { page: number; q?: string; exact?: Record<string, string> },
 ): Promise<ListResult> {
+  if (table === 'banners' || table === 'banner_positions') {
+    await ensureBannerPositions();
+  }
   const columns = await getColumns(table);
   const pk = primaryKey(columns);
   const page = Number.isInteger(options.page) && options.page > 0 ? options.page : 1;
@@ -239,6 +284,11 @@ export async function listRows(
     PAGE_SIZE,
     (page - 1) * PAGE_SIZE,
   );
+  const positionOptions =
+    table === 'banners' ? await listBannerPositionOptions(false) : null;
+  const optionLabels = positionOptions
+    ? new Map(positionOptions.map((item) => [item.value, item.label]))
+    : undefined;
   return {
     columns: visible.map((column) => ({
       name: column.name,
@@ -246,7 +296,14 @@ export async function listRows(
     })),
     rows: rows.map((row) => ({
       pk: String(row.__pk ?? row[pk.name] ?? ''),
-      cells: visible.map((column) => displayCell(table, column, row[column.name])),
+      cells: visible.map((column) =>
+        displayCell(
+          table,
+          column,
+          row[column.name],
+          column.name === 'position' ? optionLabels : undefined,
+        ),
+      ),
       status: table === 'orders' ? String(row.status ?? '') : undefined,
     })),
     total,
@@ -259,6 +316,7 @@ function toFormValue(
   table: string,
   column: ColumnInfo,
   row: Record<string, unknown> | null,
+  options: SelectOption[] | null,
 ): string {
   if (!row) {
     if (columnKind(column.type) === 'boolean') {
@@ -266,6 +324,7 @@ function toFormValue(
         ? '1'
         : '0';
     }
+    if (options && options.length > 0) return options[0].value;
     return '';
   }
   const value = row[column.name];
@@ -287,6 +346,15 @@ function fieldHint(table: string, column: ColumnInfo, creating: boolean): string
   if (table === 'orders' && column.name === 'status') {
     return '直接修改不会退回积分或调整库存。发货请用列表里的发货按钮';
   }
+  if (table === 'product_skus' && column.name === 'code') {
+    return '由发布/编辑商品时系统生成，不可修改';
+  }
+  if (table === 'banner_positions' && column.name === 'code') {
+    return '唯一编码，广告位用该值关联；小写字母开头，仅含小写字母/数字/下划线';
+  }
+  if (isImageUploadColumn(table, column.name)) {
+    return '可上传到七牛云，也可直接填写图片 URL';
+  }
   if (creating && column.pk) {
     return columnKind(column.type) === 'integer'
       ? '系统自动生成，无需填写'
@@ -299,43 +367,49 @@ export async function describeForm(
   table: string,
   row: Record<string, unknown> | null,
 ): Promise<{ title: string; pk: string | null; fields: FieldMeta[] }> {
+  if (table === 'banners' || table === 'banner_positions') {
+    await ensureBannerPositions();
+  }
   const columns = await getColumns(table);
   const pk = primaryKey(columns);
   const creating = row == null;
-  const fields = columns
-    .filter((column) => {
-      if (AUTO_TIME.has(column.name)) return false;
-      // 整型自增主键新增时不展示，由数据库自动生成
-      if (creating && column.pk > 0 && columnKind(column.type) === 'integer') return false;
-      return true;
-    })
-    .map((column) => {
-      const readonly = isReadonlyColumn(table, column.name) || (!creating && column.pk > 0);
-      const kind = columnKind(column.type);
-      const secret = isSecretColumn(table, column.name);
-      const value = secret
-        ? row && row[column.name]
-          ? '已设置（不可在此修改）'
-          : '未设置'
-        : toFormValue(table, column, row);
-      return {
-        name: column.name,
-        label: columnLabel(table, column.name),
-        kind,
-        required:
-          !readonly &&
-          !column.pk &&
-          column.notnull === 1 &&
-          column.dflt_value == null &&
-          kind !== 'boolean',
-        long: isLongField(column.type) || isJsonColumn(table, column.name),
-        readonly,
-        json: isJsonColumn(table, column.name),
-        maxLength: varcharLimit(column.type),
-        hint: fieldHint(table, column, creating),
-        value,
-      };
+  const fields: FieldMeta[] = [];
+  for (const column of columns) {
+    if (AUTO_TIME.has(column.name)) continue;
+    // 整型自增主键新增时不展示，由数据库自动生成
+    if (creating && column.pk > 0 && columnKind(column.type) === 'integer') continue;
+    const readonly = isReadonlyColumn(table, column.name) || (!creating && column.pk > 0);
+    const kind = columnKind(column.type);
+    const secret = isSecretColumn(table, column.name);
+    const currentRaw =
+      row && row[column.name] != null ? String(row[column.name]) : undefined;
+    const options = await resolveSelectOptions(table, column.name, currentRaw);
+    const value = secret
+      ? row && row[column.name]
+        ? '已设置（不可在此修改）'
+        : '未设置'
+      : toFormValue(table, column, row, options);
+    fields.push({
+      name: column.name,
+      label: columnLabel(table, column.name),
+      kind,
+      required:
+        !readonly &&
+        !column.pk &&
+        column.notnull === 1 &&
+        column.dflt_value == null &&
+        kind !== 'boolean',
+      long: isLongField(column.type) || isJsonColumn(table, column.name),
+      readonly,
+      json: isJsonColumn(table, column.name),
+      maxLength: varcharLimit(column.type),
+      hint: fieldHint(table, column, creating),
+      value,
+      options,
+      imageUpload: isImageUploadColumn(table, column.name),
+      imageFolder: imageUploadFolder(table),
     });
+  }
   return {
     title: tableLabel(table),
     pk: row ? String(row[pk.name] ?? '') : null,
@@ -356,12 +430,12 @@ export async function getRow(
   return row ?? null;
 }
 
-function coerceInput(
+async function coerceInput(
   table: string,
   column: ColumnInfo,
   raw: string,
   inserting: boolean,
-): Coerced {
+): Promise<Coerced> {
   const label = columnLabel(table, column.name);
   const kind = columnKind(column.type);
   const text = raw.trim();
@@ -391,6 +465,15 @@ function coerceInput(
       return { omit: false, value: numeric };
     }
     case 'text': {
+      const options = await resolveSelectOptions(table, column.name, text);
+      if (options && !options.some((option) => option.value === text)) {
+        throw new TableError(`请选择有效的${label}`);
+      }
+      if (table === 'banner_positions' && column.name === 'code') {
+        if (!/^[a-z][a-z0-9_]{0,31}$/.test(text)) {
+          throw new TableError('位置编码须为小写字母开头，仅含小写字母/数字/下划线');
+        }
+      }
       const limit = varcharLimit(column.type) ?? 20000;
       if (text.length > limit) throw new TableError(`${label}超过 ${limit} 个字符`);
       return { omit: false, value: text };
@@ -426,7 +509,7 @@ async function insertRow(
     }
     const raw = input[column.name] ?? '';
     if (column.pk && !raw.trim() && columnKind(column.type) === 'integer') continue;
-    const coerced = coerceInput(table, column, raw, true);
+    const coerced = await coerceInput(table, column, raw, true);
     if (coerced.omit) continue;
     cols.push(quoteIdent(column.name));
     placeholders.push('?');
@@ -458,7 +541,7 @@ async function updateRow(
       continue;
     }
     if (!(column.name in input)) continue;
-    const coerced = coerceInput(table, column, input[column.name] ?? '', false);
+    const coerced = await coerceInput(table, column, input[column.name] ?? '', false);
     if (coerced.omit) continue;
     sets.push(`${quoteIdent(column.name)} = ?`);
     params.push(coerced.value);
@@ -483,8 +566,27 @@ export async function saveRow(
   pkRaw: string,
   input: Record<string, string>,
 ): Promise<void> {
+  if (table === 'banners' || table === 'banner_positions') {
+    await ensureBannerPositions();
+  }
   const columns = await getColumns(table);
   const pk = primaryKey(columns);
+  if (pkRaw && table === 'banner_positions' && 'code' in input) {
+    const existing = await db.get<{ code: string }>(
+      'SELECT code FROM banner_positions WHERE id = ?',
+      bindPk(pk, pkRaw),
+    );
+    const nextCode = input.code.trim();
+    if (existing && nextCode && existing.code !== nextCode) {
+      const count = await db.get<{ c: number }>(
+        'SELECT COUNT(*) AS c FROM banners WHERE position = ?',
+        existing.code,
+      );
+      if ((count?.c ?? 0) > 0) {
+        throw new TableError('仍有广告位使用该位置编码，不能修改编码');
+      }
+    }
+  }
   if (pkRaw) {
     await updateRow(db, table, columns, pk, pkRaw, input);
     return;
@@ -512,6 +614,21 @@ export async function removeRow(table: string, pkRaw: string): Promise<void> {
     );
     if (sku && sku.locked > 0) {
       throw new TableError(`规格 ${sku.code} 仍有锁定库存，不能删除`);
+    }
+  }
+  if (table === 'banner_positions') {
+    const position = await db.get<{ code: string }>(
+      'SELECT code FROM banner_positions WHERE id = ?',
+      pkValue,
+    );
+    if (position) {
+      const count = await db.get<{ c: number }>(
+        'SELECT COUNT(*) AS c FROM banners WHERE position = ?',
+        position.code,
+      );
+      if ((count?.c ?? 0) > 0) {
+        throw new TableError('仍有广告位使用该展示位置，请先调整广告位或改为停用');
+      }
     }
   }
   const result = await db.run(

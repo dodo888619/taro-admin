@@ -48,6 +48,7 @@ export const TABLE_GROUPS: TableGroup[] = [
     id: 'ops',
     title: '运营',
     tables: [
+      'banner_positions',
       'banners',
       'survey_questions',
       'user_survey_responses',
@@ -90,6 +91,7 @@ const TABLE_LABELS: Record<string, string> = {
   user_article_reads: '文章阅读记录',
   user_exercise_completes: '练习完成记录',
   orders: '订单',
+  banner_positions: '广告展示位置',
   banners: '广告位',
   survey_questions: '问卷题目',
   user_survey_responses: '问卷答卷',
@@ -221,8 +223,13 @@ const TABLE_COLUMN_LABELS: Record<string, Record<string, string>> = {
   products: { name: '商品名称', points: '兑换积分' },
   product_categories: { name: '分类名称' },
   orders: { cover: '封面快照', price: '展示价格快照' },
-  banners: { title: '主标题' },
+  banners: { title: '主标题', position: '展示位置' },
+  banner_positions: { code: '位置编码', name: '位置名称' },
 };
+
+export type SelectOption = { value: string; label: string };
+
+const SELECT_OPTIONS: Record<string, Record<string, SelectOption[]>> = {};
 
 const JSON_COLUMNS: Record<string, string[]> = {
   products: ['tips'],
@@ -235,6 +242,14 @@ const JSON_COLUMNS: Record<string, string[]> = {
 
 const SECRET_COLUMNS: Record<string, string[]> = {
   users: ['passwordHash', 'tradePasswordHash'],
+};
+
+const READONLY_COLUMNS: Record<string, string[]> = {
+  product_skus: ['code'],
+};
+
+const IMAGE_UPLOAD_COLUMNS: Record<string, string[]> = {
+  banners: ['imageUrl'],
 };
 
 const ORDER_STATUSES = [
@@ -298,7 +313,27 @@ export function isSecretColumn(table: string, column: string): boolean {
 }
 
 export function isReadonlyColumn(table: string, column: string): boolean {
-  return isSecretColumn(table, column);
+  if (isSecretColumn(table, column)) return true;
+  return READONLY_COLUMNS[table]?.includes(column) ?? false;
+}
+
+export function selectOptions(table: string, column: string): SelectOption[] | null {
+  return SELECT_OPTIONS[table]?.[column] ?? null;
+}
+
+export function selectOptionLabel(table: string, column: string, value: string): string {
+  const options = selectOptions(table, column);
+  if (!options) return value;
+  return options.find((option) => option.value === value)?.label ?? value;
+}
+
+export function isImageUploadColumn(table: string, column: string): boolean {
+  return IMAGE_UPLOAD_COLUMNS[table]?.includes(column) ?? false;
+}
+
+export function imageUploadFolder(table: string): string {
+  if (table === 'banners') return 'banners';
+  return 'products';
 }
 
 export function groupTables(existing: string[]): TableGroup[] {

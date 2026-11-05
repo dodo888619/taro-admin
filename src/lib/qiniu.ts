@@ -35,7 +35,10 @@ export function publicImageUrl(stored: string): string {
   return `${base}/${key.replace(/^\/+/, '')}`;
 }
 
-export function uploadProductImage(file: { buffer: Buffer; name: string; type: string }): Promise<string> {
+export function uploadProductImage(
+  file: { buffer: Buffer; name: string; type: string },
+  folder = 'products',
+): Promise<string> {
   const accessKey = setting('QINIU_ACCESS_KEY');
   const secretKey = setting('QINIU_SECRET_KEY');
   const bucket = setting('QINIU_BUCKET');
@@ -45,7 +48,8 @@ export function uploadProductImage(file: { buffer: Buffer; name: string; type: s
   const ext = path.extname(file.name).toLowerCase();
   if (!IMAGE_EXT.has(ext)) throw new Error('只支持 jpg、png、webp、gif');
   if (file.buffer.length > 5 * 1024 * 1024) throw new Error('单张图片不超过 5MB');
-  const key = `products/${Date.now()}-${randomBytes(6).toString('hex')}${ext}`;
+  const safeFolder = /^[a-z0-9_-]+$/i.test(folder) ? folder : 'products';
+  const key = `${safeFolder}/${Date.now()}-${randomBytes(6).toString('hex')}${ext}`;
   const mac = new qiniu.auth.digest.Mac(accessKey, secretKey);
   const token = new qiniu.rs.PutPolicy({ scope: bucket }).uploadToken(mac);
   const config = new qiniu.conf.Config();

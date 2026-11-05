@@ -124,7 +124,8 @@ export async function saveRowAction(
   } catch (error) {
     return { error: publicError(error) };
   }
-  redirect(`/tables/${encodeURIComponent(table)}?saved=1`);
+  const listTable = table === 'banners' ? 'banner_positions' : table;
+  redirect(`/tables/${encodeURIComponent(listTable)}?saved=1`);
 }
 
 export async function deleteRowAction(formData: FormData): Promise<void> {
@@ -135,19 +136,20 @@ export async function deleteRowAction(formData: FormData): Promise<void> {
     await guardMenu(actionPermission(`table:${table}`, 'delete'));
   }
   const pk = String(formData.get('pk') ?? '');
+  const listTable = table === 'banners' ? 'banner_positions' : table;
   try {
     await removeRow(table, pk);
     refreshMall();
   } catch (error) {
     redirect(
       withNotice(
-        `/tables/${encodeURIComponent(table)}`,
+        `/tables/${encodeURIComponent(listTable)}`,
         'error',
         publicError(error),
       ),
     );
   }
-  redirect(`/tables/${encodeURIComponent(table)}?saved=1`);
+  redirect(`/tables/${encodeURIComponent(listTable)}?saved=1`);
 }
 
 export async function shipOrder(formData: FormData): Promise<void> {

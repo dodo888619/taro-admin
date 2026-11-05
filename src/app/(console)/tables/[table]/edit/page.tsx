@@ -17,7 +17,7 @@ export default async function EditRowPage({
   searchParams,
 }: {
   params: Promise<{ table: string }>;
-  searchParams: Promise<{ pk?: string }>;
+  searchParams: Promise<{ pk?: string; position?: string }>;
 }) {
   const { table } = await params;
   const query = await searchParams;
@@ -41,6 +41,14 @@ export default async function EditRowPage({
     );
   }
   const form = await describeForm(table, row);
+  if (!pk && table === 'banners') {
+    const position = query.position?.trim() ?? '';
+    if (position) {
+      for (const field of form.fields) {
+        if (field.name === 'position') field.value = position;
+      }
+    }
+  }
   const warning = deleteWarning(table);
   const access = await requireAdmin();
   const allow = (action: string) => {
@@ -89,7 +97,17 @@ export default async function EditRowPage({
         <div>
           <h1>{pk ? `编辑${form.title}` : `新增${form.title}`}</h1>
           <p className="muted">
-            <Link href={table === 'products' ? '/products' : `/tables/${table}`}>{form.title}</Link>
+            <Link
+              href={
+                table === 'products'
+                  ? '/products'
+                  : table === 'banners'
+                    ? '/tables/banner_positions'
+                    : `/tables/${table}`
+              }
+            >
+              {table === 'banners' ? '广告展示位置' : form.title}
+            </Link>
           </p>
         </div>
         {pk && allow('delete') ? <DeleteButton table={table} pk={pk} warning={warning} /> : null}

@@ -1,11 +1,40 @@
 'use client';
 
 import { useActionState } from 'react';
+import { ImageUrlField } from '@/components/ImageUrlField';
 import { saveRowAction, type FormState } from '@/lib/actions';
 import type { FieldMeta } from '@/lib/tables';
 
 function FieldControl({ field }: { field: FieldMeta }) {
-  if (field.readonly) return <p className="readonly">{field.value || '—'}</p>;
+  if (field.readonly) {
+    if (field.options) {
+      const label = field.options.find((option) => option.value === field.value)?.label;
+      return <p className="readonly">{label || field.value || '—'}</p>;
+    }
+    return <p className="readonly">{field.value || '—'}</p>;
+  }
+  if (field.imageUpload) {
+    return (
+      <ImageUrlField
+        name={field.name}
+        value={field.value}
+        required={field.required}
+        maxLength={field.maxLength}
+        folder={field.imageFolder}
+      />
+    );
+  }
+  if (field.options) {
+    return (
+      <select name={field.name} defaultValue={field.value} required={field.required}>
+        {field.options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.label}
+          </option>
+        ))}
+      </select>
+    );
+  }
   switch (field.kind) {
     case 'boolean':
       return (
@@ -71,7 +100,10 @@ export function RowForm({
       {state?.error ? <p className="alert alert-error">{state.error}</p> : null}
       <div className="form-grid">
         {fields.map((field) => (
-          <label key={field.name} className={field.long || field.json ? 'field field-wide' : 'field'}>
+          <label
+            key={field.name}
+            className={field.long || field.json || field.imageUpload ? 'field field-wide' : 'field'}
+          >
             <span>{field.label}</span>
             <FieldControl field={field} />
             {field.hint ? <p className="hint">{field.hint}</p> : null}
