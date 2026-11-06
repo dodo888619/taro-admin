@@ -29,8 +29,18 @@ function domain(): string {
 }
 
 export function publicImageUrl(stored: string): string {
+  if (/^https?:\/\//i.test(stored) && !stored.startsWith('qiniu:')) {
+    // 历史数据可能是完整 HTTP URL；小程序只认 HTTPS
+    if (
+      /^http:\/\//i.test(stored) &&
+      !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\b/i.test(stored)
+    ) {
+      return `https://${stored.slice('http://'.length)}`;
+    }
+    return stored;
+  }
   const key = stored.startsWith('qiniu:') ? stored.slice('qiniu:'.length) : stored;
-  const base = domain();
+  const base = domain().replace(/^http:\/\//i, 'https://');
   if (!base || !key) return stored;
   return `${base}/${key.replace(/^\/+/, '')}`;
 }

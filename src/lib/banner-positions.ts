@@ -1,5 +1,6 @@
 import 'server-only';
 import { db } from './db';
+import { publicImageUrl } from './qiniu';
 import type { SelectOption } from './schema';
 
 const DEFAULT_POSITIONS: Array<{ code: string; name: string; sort: number }> = [
@@ -118,7 +119,7 @@ export async function listBannerPositionGroups(): Promise<{
       id: banner.id,
       title: banner.title,
       subtitle: banner.subtitle ?? '',
-      imageUrl: banner.imageUrl ?? '',
+      imageUrl: banner.imageUrl ? publicImageUrl(banner.imageUrl) : '',
       linkUrl: banner.linkUrl ?? '',
       sort: banner.sort,
       enabled: Number(banner.enabled) === 1,

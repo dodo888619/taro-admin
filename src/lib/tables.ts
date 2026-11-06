@@ -5,6 +5,7 @@ import {
   ensureBannerPositions,
   listBannerPositionOptions,
 } from './banner-positions';
+import { publicImageUrl } from './qiniu';
 import {
   columnKind,
   columnLabel,
@@ -46,6 +47,8 @@ export type FieldMeta = {
   options: SelectOption[] | null;
   imageUpload: boolean;
   imageFolder: string;
+  /** 图片字段预览 URL（qiniu: 已解析） */
+  imagePreviewUrl?: string;
 };
 
 export type Cell = { text: string; title: string };
@@ -389,6 +392,7 @@ export async function describeForm(
         ? '已设置（不可在此修改）'
         : '未设置'
       : toFormValue(table, column, row, options);
+    const imageUpload = isImageUploadColumn(table, column.name);
     fields.push({
       name: column.name,
       label: columnLabel(table, column.name),
@@ -406,8 +410,9 @@ export async function describeForm(
       hint: fieldHint(table, column, creating),
       value,
       options,
-      imageUpload: isImageUploadColumn(table, column.name),
+      imageUpload,
       imageFolder: imageUploadFolder(table),
+      imagePreviewUrl: imageUpload && value ? publicImageUrl(value) : '',
     });
   }
   return {
@@ -442,7 +447,10 @@ async function coerceInput(
   if (!text) {
     if (kind === 'boolean') return { omit: false, value: 0 };
     if (!column.notnull) return { omit: false, value: null };
-    if (inserting && column.dflt_value != null) return { omit: true };
+    // 有默认值的字段（如广告 imageUrl 默认 ''）允许存空串，避免「上传后改别的字段」被拦
+    if (column.dflt_value != null) {
+      return inserting ? { omit: true } : { omit: false, value: '' };
+    }
     throw new TableError(`请填写${label}`);
   }
   if (isJsonColumn(table, column.name)) {

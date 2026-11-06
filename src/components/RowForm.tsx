@@ -18,6 +18,7 @@ function FieldControl({ field }: { field: FieldMeta }) {
       <ImageUrlField
         name={field.name}
         value={field.value}
+        previewUrl={field.imagePreviewUrl}
         required={field.required}
         maxLength={field.maxLength}
         folder={field.imageFolder}

@@ -5,17 +5,24 @@ import { useState } from 'react';
 export function ImageUrlField({
   name,
   value,
+  previewUrl = '',
   required,
   maxLength,
   folder,
 }: {
   name: string;
+  /** 入库值：优先 qiniu:key，也兼容完整 http(s) URL */
   value: string;
+  /** 预览用可访问 URL（后台已把 qiniu: 解析成 CDN） */
+  previewUrl?: string;
   required: boolean;
   maxLength: number | null;
   folder: string;
 }) {
-  const [url, setUrl] = useState(value);
+  const [stored, setStored] = useState(value);
+  const [preview, setPreview] = useState(
+    previewUrl || (/^https?:\/\//i.test(value) ? value : ''),
+  );
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,11 +37,17 @@ export function ImageUrlField({
       body.set('file', file);
       body.set('folder', folder);
       const response = await fetch('/api/uploads', { method: 'POST', body });
-      const payload = (await response.json()) as { url?: string; error?: string };
-      if (!response.ok || !payload.url) {
+      const payload = (await response.json()) as {
+        stored?: string;
+        url?: string;
+        error?: string;
+      };
+      if (!response.ok || !payload.stored || !payload.url) {
         throw new Error(payload.error || '上传失败');
       }
-      setUrl(payload.url);
+      // 入库存 qiniu:key（与商品图一致），预览用 HTTPS CDN
+      setStored(payload.stored);
+      setPreview(payload.url);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : '上传失败');
     } finally {
@@ -42,14 +55,19 @@ export function ImageUrlField({
     }
   }
 
+  const clear = () => {
+    setStored('');
+    setPreview('');
+  };
+
   return (
     <div className="image-url-field">
-      <input type="hidden" name={name} value={url} required={required && !url} />
-      {url ? (
+      <input type="hidden" name={name} value={stored} required={required && !stored} />
+      {preview ? (
         <div className="image-url-preview">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt="" />
-          <button className="btn btn-tiny" type="button" onClick={() => setUrl('')}>
+          <img src={preview} alt="" />
+          <button className="btn btn-tiny" type="button" onClick={clear}>
             清除图片
           </button>
         </div>
@@ -62,8 +80,12 @@ export function ImageUrlField({
       />
       <input
         type="url"
-        value={url}
-        onChange={(event) => setUrl(event.target.value)}
+        value={preview}
+        onChange={(event) => {
+          const next = event.target.value;
+          setPreview(next);
+          setStored(next);
+        }}
         placeholder="或粘贴图片 URL"
         maxLength={maxLength ?? undefined}
       />
